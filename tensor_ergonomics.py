@@ -159,11 +159,11 @@ class RULAXXX():
             score_legs = torch.cat((score_legs, score_val.unsqueeze(0)))
             print('Score Legs:', score_legs)
 
-            """index1 = (score_neck[i] - 1).long()                           """
-            """index2 = ((score_trunk[i] - 1)*2 + (score_legs[i] - 1)).long()"""
-            """curr_score_B = self.table_B[index1][index2]                   """
-            """print('Current Score B:', curr_score_B)                       """
-            """score_B.append(curr_score_B)                                      """
+            index1 = (score_neck[i] - 1).long()
+            index2 = ((score_trunk[i] - 1)*2 + (score_legs[i] - 1)).long()
+            curr_score_B = self.table_B[index1][index2]
+            print('Current Score B:', curr_score_B)
+            score_B.append(curr_score_B)
 
 
             curr_score_A = torch.min(curr_score_A, torch.tensor(8.0, requires_grad=True))
