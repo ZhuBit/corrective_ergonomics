@@ -254,7 +254,7 @@ class RULA():
             curr_total = self.table_C[(curr_score_A - 1)][(curr_score_B - 1)]
             print('Current Total Score:', curr_total)
             score_total.append(curr_total)
-
+            print('Total Score:', score_total)
         self.score_total = score_total
         return score_total
 

@@ -2,7 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
-class RULAXXX():
+class FAKE():
     def __init__(self, pose_3d):
 
         self.pose_3d = torch.tensor(pose_3d, requires_grad=True, dtype=torch.float32)
@@ -13,25 +13,28 @@ class RULAXXX():
                           "LAnkle": 15, "RAnkle": 16}
 
         # table A RULA-Worksheet (without wrist scores)
-        self.table_A = torch.tensor([1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 6, 7, 8, 9], dtype=torch.float32)
+        self.table_A = torch.tensor([1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 6, 7, 8, 9],
+                                    dtype=torch.float32, requires_grad=True)
 
         # table B RULA-Worksheet
         self.table_B = torch.tensor([[1, 3, 2, 3, 3, 4, 5, 5, 6, 6, 7, 7],
-                        [2, 3, 2, 3, 4, 5, 5, 5, 6, 7, 7, 7],
-                        [3, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 7],
-                        [5, 5, 5, 6, 6, 7, 7, 7, 7, 7, 8, 8],
-                        [7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8],
-                        [8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9]], dtype=torch.float32)
+                                     [2, 3, 2, 3, 4, 5, 5, 5, 6, 7, 7, 7],
+                                     [3, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 7],
+                                     [5, 5, 5, 6, 6, 7, 7, 7, 7, 7, 8, 8],
+                                     [7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8],
+                                     [8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9]],
+                                    dtype=torch.float32, requires_grad=True)
 
         # table C RULA-Worksheet
         self.table_C = torch.tensor([[1, 2, 3, 3, 4, 5, 5],
-                        [2, 2, 3, 4, 4, 5, 5],
-                        [3, 3, 3, 4, 4, 5, 6],
-                        [3, 3, 3, 4, 5, 6, 6],
-                        [4, 4, 4, 5, 6, 7, 7],
-                        [4, 4, 5, 6, 6, 7, 7],
-                        [5, 5, 6, 6, 7, 7, 7],
-                        [5, 5, 6, 7, 7, 7, 7]], dtype=torch.float32)
+                                     [2, 2, 3, 4, 4, 5, 5],
+                                     [3, 3, 3, 4, 4, 5, 6],
+                                     [3, 3, 3, 4, 5, 6, 6],
+                                     [4, 4, 4, 5, 6, 7, 7],
+                                     [4, 4, 5, 6, 6, 7, 7],
+                                     [5, 5, 6, 6, 7, 7, 7],
+                                     [5, 5, 6, 7, 7, 7, 7]],
+                                    dtype=torch.float32, requires_grad=True)
 
         self.angle_dict = {0: 'L_shoulder_Z', 1: 'L_shoulder_line', 2: 'R_shoulder_Z',
                            3: 'R_shoulder_line', 4: 'L_elbow', 5: 'R_elbow',
@@ -42,7 +45,6 @@ class RULAXXX():
         self.score_total = torch.tensor([], requires_grad=True, dtype=torch.float32)
 
     def compute_scores(self):
-        score_upper_arm = torch.tensor([], requires_grad=True, dtype=torch.float32)
         score_lower_arm = torch.tensor([], requires_grad=True, dtype=torch.float32)
         score_trunk = torch.tensor([], requires_grad=True, dtype=torch.float32)
         score_neck = torch.tensor([], requires_grad=True, dtype=torch.float32)
@@ -50,19 +52,17 @@ class RULAXXX():
 
         score_upper_arm = torch.empty((0, 1), requires_grad=True, dtype=torch.float32)
 
-        # Global scores
-        score_A = []
-        score_B = []
         score_total = []
 
-        angles = self.accumulate_angles()  # This should return a torch tensor
-        print('Angles:', angles.shape)
-
-
+        angles = self.accumulate_angles()
         for i, frame in enumerate(angles):
             print('--- Frame {}: ---'.format(i))
             print('Frame:', frame)
             # A. Arms Step 1
+            print('Frame requires_grad:', frame.requires_grad)
+            print('Score Upper Arm requires_grad:', score_upper_arm.requires_grad)
+            print('Score Lower Arm requires_grad:', score_lower_arm.requires_grad)
+
             max_shoulder = torch.max(torch.abs(frame[0]), torch.abs(frame[2]))
             print('Max shoulder:', max_shoulder)
 
@@ -72,10 +72,21 @@ class RULAXXX():
             score_val = torch.where(max_shoulder > 90, torch.tensor(4.0, requires_grad=True), score_val)
             score_val = score_val.unsqueeze(0).unsqueeze(1)
             score_upper_arm = torch.cat((score_upper_arm, score_val), dim=0)
-
+            print('Sscore_valrequires_grad:', score_val.requires_grad)
             # A. Check Abduction
             max_abduction = torch.max(frame[1], frame[3])
             print('Max abduction:', max_abduction)
+
+            # Create a mask for the condition
+            #abduction_mask = (max_abduction > 150).float()  # This will be 1.0 if true, 0.0 if false
+            abduction_mask = (max_abduction > 150).float().unsqueeze(0)
+            score_upper_arm = score_upper_arm + abduction_mask
+
+            # Use the mask to update the score_upper_arm tensor
+            # The unsqueeze(0) is necessary to match the dimensions for broadcasting
+            #score_upper_arm = score_upper_arm + abduction_mask.unsqueeze(0)
+            score_upper_arm = torch.add(score_upper_arm, abduction_mask.unsqueeze(0))
+
 
             # Create a mask for the condition
             #abduction_mask = (max_abduction > 150).float()  # This will be 1.0 if true, 0.0 if false
@@ -103,12 +114,11 @@ class RULAXXX():
             print('Score Lower Arm:', score_lower_arm)
             # For indexing, you don't need requires_grad=True because indexing is not a differentiable operation
             # However, ensure that the result of the indexing (curr_score_A) is used in a way that maintains the graph if necessary
+
             index = ((score_upper_arm[i] - 1) * 3 + (score_lower_arm[i] - 1)).long()
             curr_score_A = self.table_A[index]
 
             print('Current Score A:', curr_score_A)
-            score_A.append(curr_score_A)
-
             # B. Neck
             score_val = torch.where(frame[11] >= 40, torch.tensor([2.0], requires_grad=True),
                                     torch.where(frame[11] >= 20, torch.tensor([1.0], requires_grad=True),
@@ -160,28 +170,48 @@ class RULAXXX():
             index2 = ((score_trunk[i] - 1) * 2 + (score_legs[i] - 1)).long()
             curr_score_B = self.table_B[index1][index2]
             print('Current Score B:', curr_score_B)
-            score_B.append(curr_score_B)
+
+            curr_score_A_clamped = torch.clamp(curr_score_A, max=8.0).requires_grad_(True)
+            curr_score_B_clamped = torch.clamp(curr_score_B, max=7.0).requires_grad_(True)
 
             # Assuming curr_score_A and curr_score_B are tensors that require gradients
             curr_score_A_clamped = torch.clamp(curr_score_A, max=8.0).requires_grad_(True)
             curr_score_B_clamped = torch.clamp(curr_score_B, max=7.0).requires_grad_(True)
             print('Clamped Curr A B score for index: ', curr_score_A_clamped, curr_score_B_clamped)
+
+
             # Indexing to get curr_total
             index1 = (curr_score_A_clamped - 1).long()
             index2 = (curr_score_B_clamped - 1).long()
-            print('Index 1 and 2: ', index1, index2)
-            curr_total = self.table_C[index1, index2]
-            print('Current Total Score:', curr_total)
+            # Ensure indices are within the bounds
+            print("index1 REQUIERS GRAD:", index1.requires_grad)
+            print("index2  REQUIERS GRAD:", index2.requires_grad)
+            # Expand index1 to have the same number of dimensions as table_C
+            index1_expanded = index1.view(-1, 1).expand(-1, self.table_C.size(1))
+            # Now gather along the rows
+            intermediate = self.table_C.gather(0, index1_expanded)
 
+            # Expand index2 to have the same number of dimensions as intermediate
+            index2_expanded = index2.view(-1, 1)
+            # Now gather along the columns
+
+            #print('Index 1 and 2: ', index1, index2)
+            # Check the shape of self.table_C
+            print("Shape of table_C:", self.table_C.shape)
+
+
+            #curr_total = self.table_C[index1, index2]
+            #curr_total = self.table_C.gather(0, index1.view(-1, 1)).gather(1, index2.view(-1, 1))
+            curr_total = intermediate.gather(1, index2_expanded)
+            print('Does curr_total require grad?', curr_total.requires_grad)
             # Append curr_total to score_total
             score_total.append(curr_total)
-            print('Total Score:', score_total)
-            # After the loop, convert score_total to a tensor if you need to compute gradients with respect to it
-            self.score_total = torch.stack(score_total)  # This will have requires_grad=True if curr_total has it
+            print('Total Score:', curr_total)
 
+            self.score_total = torch.stack(score_total)
+
+        print('Final self.score_total requires_grad:', self.score_total.requires_grad)
         print('Score total: ', self.score_total)
-        self.score_total = torch.stack(score_total)
-
         return self.score_total
 
 
@@ -285,7 +315,7 @@ class RULAXXX():
         a = pose[:, joint1]
         b = pose[:, joint2]
         c = pose[:, joint3]
-    
+
         ba = a - b
         bc = c - b
 
@@ -310,3 +340,5 @@ class RULAXXX():
 
         return angle * (180.0 / torch.pi)
 
+
+#%%
