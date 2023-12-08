@@ -215,10 +215,11 @@ class FakeLoss(nn.Module):
 
         #print('Final self.score_total requires_grad:', self.score_total.requires_grad)
         #print('Score total: ', self.score_total)
-        tensor_1x1 = torch.randint(1, 8, (1, 1))
-
-        return tensor_1x1#self.score_total
-
+        tensor_1x1 = torch.rand(1, 1, dtype=torch.float, requires_grad=True)
+        print('tensor_1x1 :', tensor_1x1)
+        #score_legs
+        # #self.score_total
+        return tensor_1x1
     def accumulate_angles(self, pose_3d):
 
         """
