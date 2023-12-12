@@ -54,6 +54,78 @@ class FAKE(nn.Module):
         #loss = F.mse_loss(total_score, pose_3d, reduction='sum')
 
         return torch.sum(total_score, dim=0) #loss
+    def calculate_neck_score(self, neck_angle, steepness):
+        """
+        :param frame: angle of the neck for one frame
+        :return: score for the neck
+        """
+        if not isinstance(neck_angle, torch.Tensor):
+            neck_angle = torch.tensor(neck_angle, dtype=torch.float32, requires_grad=True)
+        # Parameters to adjust the steepness and position of the sigmoid transitions
+        # Transition for the condition frame >= 40
+        score_for_40 = 2 * torch.sigmoid(steepness * (neck_angle - 40))
+
+        # Transition for the condition frame >= 20 and frame < 40
+        score_for_20 = 1 * torch.sigmoid(steepness * (neck_angle - 20))
+
+        # Transition for the condition frame < 20
+        score_for_less_20 = 4 - 4 * torch.sigmoid(steepness * (neck_angle - 20))
+
+        # Combining the scores
+        score = torch.max(torch.max(score_for_40, score_for_20), score_for_less_20)
+
+        return score
+
+    def calculate_side_bending_scores(self, side_angle, steepness):
+        """
+        Calculate RULA scores for neck side bending based on a series of frames using a sigmoid function.
+        :param frames: A list or array of neck angles for different frames.
+        :return: A list of scores for each frame.
+        """
+        if not isinstance(side_angle, torch.Tensor):
+            side_angle = torch.tensor(side_angle, dtype=torch.float32, requires_grad=True)
+
+        # Parameters for sigmoid function got from RULA sheet
+        lower_bound = 60
+        upper_bound = 120
+
+        # Apply sigmoid function to approximate the score
+        scores = 1 - torch.sigmoid(steepness * (side_angle - lower_bound)) * torch.sigmoid(steepness * (-side_angle + upper_bound))
+
+        return scores
+
+    def calculate_trunk_scores(self, trunk_angle, steepness):
+        """
+        Calculate RULA scores for trunk bending based on a series of frames using sigmoid functions.
+        :param frames: A list or array of trunk angles for different frames.
+        :return: A list of scores for each frame.
+            """
+        if not isinstance(trunk_angle, torch.Tensor):
+            frames = torch.tensor(trunk_angle, dtype=torch.float32, requires_grad=True)
+
+        # Defining the thresholds for different RULA scores
+        thresholds = [15, 30, 60]
+
+        # Applying sigmoid functions to approximate the score
+        score_for_15 = 1 + 1 * torch.sigmoid(steepness * (trunk_angle - thresholds[0]))
+        score_for_30 = 2 + 1 * torch.sigmoid(steepness * (trunk_angle - thresholds[1]))
+        score_for_60 = 3 + 1 * torch.sigmoid(steepness * (trunk_angle - thresholds[2]))
+
+        # Selecting the highest score that still meets the condition
+        scores = torch.min(torch.min(score_for_15, score_for_30), score_for_60)
+
+        return scores
+    def trunk_twist(self, trunk_angle, steepness):
+        """
+        Calculate RULA scores for trunk twisting based on a series of angles using a sigmoid function.
+        """
+        if not isinstance(trunk_angle, torch.Tensor):
+            trunk_angle = torch.tensor(trunk_angle, dtype=torch.float32, requires_grad=True)
+        # Threshold for triggering an increase in score
+        threshold = 30
+        # Applying a sigmoid function to approximate the score increase
+        scores = torch.sigmoid(steepness * (trunk_angle - threshold))
+        return scores
 
 
     def compute_scores(self, pose_3d):
@@ -67,23 +139,27 @@ class FAKE(nn.Module):
 
         score_total = []
         simple_angel_score = []
-        angles = self.accumulate_angles(pose_3d)
-        print('AAAAAngles: ', angles.grad)
-        for i, frame in enumerate(angles):
-            print('Frame:', i)
-            scores = self.calculate_neck_score(frame[11])
-            score_val = torch.where(frame[11] >= 40, torch.tensor([2.0], requires_grad=True, device=self.device),
-                                    torch.where(frame[11] >= 20, torch.tensor([1.0], requires_grad=True, device=self.device),
-                                                torch.where(frame[11] < 20, torch.tensor([4.0], requires_grad=True, device=self.device),
-                                                            torch.tensor([3.0], requires_grad=True, device=self.device))))
-            print('Difference: ', scores.item(), ' - ', score_val.item())
+        frames_angles = self.accumulate_frames_angles(pose_3d)
 
-            simple_angel_score.append(scores)
+        steepness = 5
+        for i, f_angels in enumerate(frames_angles):
+            print('--------------Frame:', i)
+            # Neck
+            score_neck = self.calculate_neck_score(f_angels[11], steepness)
+            score_neck += self.calculate_side_bending_scores(f_angels[12], steepness)
+            # Trunk
+            score_trunk = self.calculate_trunk_scores(f_angels[8], steepness)
+            score_trunk += self.calculate_side_bending_scores(f_angels[10], steepness)
+            score_trunk += self.trunk_twist(f_angels[9], steepness)
+            print('Trunk Angle: ', f_angels[8].item())
+            print('Trunk: ', score_trunk.item())
 
+            simple_angel_score.append(score_neck)
+            
         simple_angel_score = torch.stack(simple_angel_score, dim=0)
         return simple_angel_score
 
-    def accumulate_angles(self, pose_3d):
+    def accumulate_frames_angles(self, pose_3d):
 
         """
         computes the angles between body parts as specified by the RULA worksheet
@@ -208,26 +284,3 @@ class FAKE(nn.Module):
 
         return angle * (180.0 / torch.pi)
 
-    def calculate_neck_score(self, frame):
-        """
-        :param frame: angle of the neck for one frame
-        :return: score for the neck
-        """
-        if not isinstance(frame, torch.Tensor):
-            frame = torch.tensor(frame, dtype=torch.float32, requires_grad=True)
-        # Parameters to adjust the steepness and position of the sigmoid transitions
-        steepness = 1  # This controls how quickly the transition happens
-
-        # Transition for the condition frame >= 40
-        score_for_40 = 2 * torch.sigmoid(steepness * (frame - 40))
-
-        # Transition for the condition frame >= 20 and frame < 40
-        score_for_20 = 1 * torch.sigmoid(steepness * (frame - 20))
-
-        # Transition for the condition frame < 20
-        score_for_less_20 = 4 - 4 * torch.sigmoid(steepness * (frame - 20))
-
-        # Combining the scores
-        score = torch.max(torch.max(score_for_40, score_for_20), score_for_less_20)
-
-        return score

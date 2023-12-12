@@ -74,7 +74,7 @@ class RULA():
             #print('0. self.pose_3d type: ', type(self.pose_3d.shape))
             #rint('1. self.pose_3d.shape: ', self.pose_3d.shape)
             #print('2. self.pose_3d[ind,...].shape: ', self.pose_3d[ind,...].shape)
-            pose = self.transform_pose(self.pose_3d[ind,...].copy()) # deep copz
+            pose = self.transform_pose(self.pose_3d[ind,...]) # deep copz
 
             # left shoulder angles
             shoulder_left_z = self.calculate_z(pose, 11, 12) - 10  #Angle between shoulder, elbow and z-axes (10 degrees
@@ -158,15 +158,14 @@ class RULA():
         score_total = list()
 
         angles = self.accumulate_angles()
-        print('Angles:', angles)
+        #print('Angles:', angles)
 
         for i, frame in enumerate(angles):
-            print('--- Frame {}: ---'.format(i))
-            print('Frame:', frame)
+            print('--------------Frame:', i)
 
             # A. Arms Step 1
             max_shoulder = max(abs(frame[0]), abs(frame[2]))
-            print('Max shoulder:', max_shoulder)
+            #print('Max shoulder:', max_shoulder)
 
             if max_shoulder <= 20:
                 score_upper_arm.append(1)
@@ -179,25 +178,25 @@ class RULA():
 
             # A. Check Abduction
             max_abduction = max(frame[1], frame[3])
-            print('Max abduction:', max_abduction)
+            #print('Max abduction:', max_abduction)
 
             if max_abduction > 150:
                 score_upper_arm[i] += 1
 
             # A. Arms Step 2
             max_elbow = max(frame[4], frame[5])
-            print('Max elbow:', max_elbow)
+            #print('Max elbow:', max_elbow)
 
             if max_elbow <= 20 or max_elbow >= 100:
                 score_lower_arm.append(2)
             else:
                 score_lower_arm.append(1)
 
-            print('Score Upper Arm:', score_upper_arm)
-            print('Score Lower Arm:', score_lower_arm)
+            #print('Score Upper Arm:', score_upper_arm)
+            #print('Score Lower Arm:', score_lower_arm)
 
             curr_score_A = self.table_A[(score_upper_arm[i]-1)*3 + (score_lower_arm[i] - 1)]
-            print('Current Score A:', curr_score_A)
+            #print('Current Score A:', curr_score_A)
             score_A.append(curr_score_A)
 
             # B. Neck
@@ -213,48 +212,55 @@ class RULA():
             # Neck Side Bending
             if frame[12] >= 120 or frame[12] <= 60:
                 score_neck[i] += 1
-            print('Score Neck:', score_neck)
+            #print('Score Neck:', score_neck)
 
             # B. Trunk
+            print('Trunk Angle: ', frame[8])
             if frame[8] <= 15:
                 score_trunk.append(1)
+                print('Score Trunk +1')
             elif frame[8] <= 30:
                 score_trunk.append(2)
+                print('Score Trunk +2')
             elif frame[8] <= 60:
                 score_trunk.append(3)
+                print('Score Trunk +3')
             else:
                 score_trunk.append(4)
+                print('Score Trunk +4')
 
             # Trunk Side Bending
             if frame[10] <= 60 or frame[10] >= 120:
                 score_trunk[i] += 1
+                print('++++++++++++++++++++Trunk Bend +1')
             # Trunk Twist
             if frame[9] >= 30:
                 score_trunk[i] += 1
+                print('+++++++++++++++++++++++++++++Trunk Twist +1')
 
-            print('Score Trunk:', score_trunk)
+            #print('Score Trunk:', score_trunk)
 
             # B. Legs
             min_knee = min(frame[6], frame[7])
-            print('Min knee:', min_knee)
+            #print('Min knee:', min_knee)
 
             if min_knee >= 90:
                 score_legs.append(2)
             else:
                 score_legs.append(1)
-            print('Score Legs:', score_legs)
+            #print('Score Legs:', score_legs)
 
             curr_score_B = self.table_B[(score_neck[i] - 1)][(score_trunk[i] - 1)*2 + (score_legs[i] - 1)]
-            print('Current Score B:', curr_score_B)
+            #print('Current Score B:', curr_score_B)
             score_B.append(curr_score_B)
 
             curr_score_A = min(8, curr_score_A)
             curr_score_B = min(7, curr_score_B)
 
             curr_total = self.table_C[(curr_score_A - 1)][(curr_score_B - 1)]
-            print('Current Total Score:', curr_total)
+            #print('Current Total Score:', curr_total)
             score_total.append(curr_total)
-            print('Total Score:', score_total)
+            #print('Total Score:', score_total)
         self.score_total = score_total
         return score_total
 
