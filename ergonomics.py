@@ -200,57 +200,68 @@ class RULA():
             score_A.append(curr_score_A)
 
             # B. Neck
+            print('Neck Angle: ', frame[11])
             if frame[11] >= 20:
                 score_neck.append(1)
+                print('Score Neck +1')
             elif frame[11] >= 40:
                 score_neck.append(2)
+                print('Score Neck +2')
             elif frame[11] <= 20:
                 score_neck.append(4)
+                print('Score Neck +4')
             else:
                 score_neck.append(3)
+                print('Score Neck +3')
 
             # Neck Side Bending
             if frame[12] >= 120 or frame[12] <= 60:
+                print('++++++++++++++++++++Neck Bend +1')
                 score_neck[i] += 1
             #print('Score Neck:', score_neck)
 
             # B. Trunk
-            print('Trunk Angle: ', frame[8])
+            #print('Trunk Angle: ', frame[8])
             if frame[8] <= 15:
                 score_trunk.append(1)
-                print('Score Trunk +1')
+                #print('Score Trunk +1')
             elif frame[8] <= 30:
                 score_trunk.append(2)
-                print('Score Trunk +2')
+                #print('Score Trunk +2')
             elif frame[8] <= 60:
                 score_trunk.append(3)
-                print('Score Trunk +3')
+                #print('Score Trunk +3')
             else:
                 score_trunk.append(4)
-                print('Score Trunk +4')
+                #print('Score Trunk +4')
 
             # Trunk Side Bending
             if frame[10] <= 60 or frame[10] >= 120:
                 score_trunk[i] += 1
-                print('++++++++++++++++++++Trunk Bend +1')
+                #print('++++++++++++++++++++Trunk Bend +1')
             # Trunk Twist
             if frame[9] >= 30:
                 score_trunk[i] += 1
-                print('+++++++++++++++++++++++++++++Trunk Twist +1')
+                #print('+++++++++++++++++++++++++++++Trunk Twist +1')
 
             #print('Score Trunk:', score_trunk)
 
             # B. Legs
             min_knee = min(frame[6], frame[7])
             #print('Min knee:', min_knee)
-
+            print('Min knee:', min_knee)
             if min_knee >= 90:
+                break
                 score_legs.append(2)
             else:
                 score_legs.append(1)
-            #print('Score Legs:', score_legs)
-
-            curr_score_B = self.table_B[(score_neck[i] - 1)][(score_trunk[i] - 1)*2 + (score_legs[i] - 1)]
+            print('Score Neck:', score_neck[i])
+            print('Score Trunk:', score_trunk[i])
+            print('Score Legs:', score_legs[i])
+            row = (score_neck[i] - 1)
+            col = (score_trunk[i] - 1)*2 + (score_legs[i] - 1)
+            print('Row:', row, 'Col:', col)
+            curr_score_B = self.table_B[row][col]
             #print('Current Score B:', curr_score_B)
             score_B.append(curr_score_B)
 

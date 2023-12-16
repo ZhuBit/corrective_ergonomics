@@ -47,14 +47,15 @@ class FAKE(nn.Module):
     def forward(self, pose_3d):
         # Compute RULA scores from pose_3d
         #pose_3d = pose_3d.to(self.device)
-        total_score = self.compute_scores(pose_3d)
+        self.loss = self.compute_scores(pose_3d)
 
         # Compute the loss as the mean squared error between
         # the computed scores and the target scores
         #loss = F.mse_loss(total_score, pose_3d, reduction='sum')
 
-        return torch.sum(total_score, dim=0) #loss
-    def calculate_neck_score(self, neck_angle, steepness):
+        return torch.sum(self.loss, dim=0) #loss
+
+    def estimate_neck_score(self, neck_angle, steepness):
         """
         :param frame: angle of the neck for one frame
         :return: score for the neck
@@ -72,11 +73,11 @@ class FAKE(nn.Module):
         score_for_less_20 = 4 - 4 * torch.sigmoid(steepness * (neck_angle - 20))
 
         # Combining the scores
-        score = torch.max(torch.max(score_for_40, score_for_20), score_for_less_20)
+        scores = torch.max(torch.max(score_for_40, score_for_20), score_for_less_20)
 
-        return score
+        return scores
 
-    def calculate_side_bending_scores(self, side_angle, steepness):
+    def estimate_side_bending_scores(self, side_angle, steepness):
         """
         Calculate RULA scores for neck side bending based on a series of frames using a sigmoid function.
         :param frames: A list or array of neck angles for different frames.
@@ -94,46 +95,70 @@ class FAKE(nn.Module):
 
         return scores
 
-    def calculate_trunk_scores(self, trunk_angle, steepness):
+    def estimate_trunk_scores(self, trunk_angle, steepness):
         """
-        Calculate RULA scores for trunk bending based on a series of frames using sigmoid functions.
-        :param frames: A list or array of trunk angles for different frames.
-        :return: A list of scores for each frame.
-            """
+        Calculate RULA scores for trunk bending based on trunk angle using sigmoid functions.
+        :param trunk_angle: A list or array of trunk angles.
+        :return: A list of scores for each angle.
+        """
         if not isinstance(trunk_angle, torch.Tensor):
-            frames = torch.tensor(trunk_angle, dtype=torch.float32, requires_grad=True)
+            trunk_angle = torch.tensor(trunk_angle, dtype=torch.float32, requires_grad=True)
 
         # Defining the thresholds for different RULA scores
-        thresholds = [15, 30, 60]
-
+        #TODO [20, 60, 90]
+        thresholds = torch.tensor([15, 30, 60], dtype=torch.float32, requires_grad=True)
         # Applying sigmoid functions to approximate the score
-        score_for_15 = 1 + 1 * torch.sigmoid(steepness * (trunk_angle - thresholds[0]))
-        score_for_30 = 2 + 1 * torch.sigmoid(steepness * (trunk_angle - thresholds[1]))
-        score_for_60 = 3 + 1 * torch.sigmoid(steepness * (trunk_angle - thresholds[2]))
+        score_below_1 = torch.sigmoid(steepness * (trunk_angle - thresholds[0]))
+        score_below_2 = torch.sigmoid(steepness * (trunk_angle - thresholds[1]))
+        score_below_3 = torch.sigmoid(steepness * (trunk_angle - thresholds[2]))
 
-        # Selecting the highest score that still meets the condition
-        scores = torch.min(torch.min(score_for_15, score_for_30), score_for_60)
+        # Combining the scores
+        combined_score = 1 + 1 * score_below_1 + 1 * score_below_2 + 1 * score_below_3
 
-        return scores
-    def trunk_twist(self, trunk_angle, steepness):
+
+
+        return combined_score
+    def estimate_trunk_twist(self, trunk_angle, steepness):
         """
         Calculate RULA scores for trunk twisting based on a series of angles using a sigmoid function.
         """
         if not isinstance(trunk_angle, torch.Tensor):
             trunk_angle = torch.tensor(trunk_angle, dtype=torch.float32, requires_grad=True)
         # Threshold for triggering an increase in score
-        threshold = 30
+        threshold = torch.tensor(30, dtype=torch.float32, requires_grad=True)
         # Applying a sigmoid function to approximate the score increase
         scores = torch.sigmoid(steepness * (trunk_angle - threshold))
+
         return scores
 
+    def estimate_leg_scores(self, knee_angle, steepness):
+        """
+        Calculate RULA scores for leg bending based on a series of angles using a sigmoid function.
+        """
+        if not isinstance(knee_angle, torch.Tensor):
+            knee_angle = torch.tensor(knee_angle, dtype=torch.float32, requires_grad=True)
+
+        # Threshold for triggering an increase in score
+        threshold = torch.tensor(90, dtype=torch.float32, requires_grad=True)
+
+        # Transition for the condition min_knee >= 90
+        score_for_90 = 2 * torch.sigmoid(steepness * (knee_angle - threshold))
+
+        # Transition for the condition min_knee < 90
+        #score_for_less_90 = 1 + torch.sigmoid(-steepness * (knee_angle - threshold))
+        score_for_less_90 = 2 - torch.sigmoid(-steepness * (knee_angle - threshold))
+
+        # Combining the scores
+        score = torch.max(score_for_90, score_for_less_90)
+
+        return score
 
     def compute_scores(self, pose_3d):
 
-        score_lower_arm = torch.tensor([], requires_grad=True, dtype=torch.float32, device=self.device)
-        score_trunk = torch.tensor([], requires_grad=True, dtype=torch.float32, device=self.device)
-        score_neck = torch.tensor([], requires_grad=True, dtype=torch.float32, device=self.device)
-        score_legs = torch.tensor([], requires_grad=True, dtype=torch.float32, device=self.device)
+        scores_lower_arm = []
+        scores_trunk = []
+        scores_neck = []
+        scores_legs = []
 
         score_upper_arm = torch.empty((0, 1), requires_grad=True, dtype=torch.float32, device=self.device)
 
@@ -141,21 +166,43 @@ class FAKE(nn.Module):
         simple_angel_score = []
         frames_angles = self.accumulate_frames_angles(pose_3d)
 
-        steepness = 5
+        steepness = torch.tensor(5.0, dtype=torch.float32, requires_grad=True, device=self.device)
         for i, f_angels in enumerate(frames_angles):
             print('--------------Frame:', i)
+            # B sheet
             # Neck
-            score_neck = self.calculate_neck_score(f_angels[11], steepness)
-            score_neck += self.calculate_side_bending_scores(f_angels[12], steepness)
+            score_neck = self.estimate_neck_score(f_angels[11], steepness)
+            score_neck += self.estimate_side_bending_scores(f_angels[12], steepness)
+  
             # Trunk
-            score_trunk = self.calculate_trunk_scores(f_angels[8], steepness)
-            score_trunk += self.calculate_side_bending_scores(f_angels[10], steepness)
-            score_trunk += self.trunk_twist(f_angels[9], steepness)
-            print('Trunk Angle: ', f_angels[8].item())
-            print('Trunk: ', score_trunk.item())
+            score_trunk = self.estimate_trunk_scores(f_angels[8], steepness)
+            score_trunk += self.estimate_side_bending_scores(f_angels[10], steepness)
+            score_trunk += self.estimate_trunk_twist(f_angels[9], steepness)
 
-            simple_angel_score.append(score_neck)
-            
+            # Legs
+            min_knee = torch.min(f_angels[6], f_angels[7])
+            score_legs = self.estimate_leg_scores(min_knee, steepness)
+
+            print('Score Neck:', score_trunk.item())
+            print('Score Trunk:', score_trunk.item())
+            print('Score Legs:', score_legs.item())
+            #row = score_neck - 1
+            #col = (torch.round(scores_trunk[i]).long() - 1)*2 + (torch.round(scores_legs[i]).long() - 1)
+            #print('row:', row, 'col:', col)
+            # Convert indices to one-hot form
+            #row_one_hot = torch.nn.functional.one_hot(row_index, num_classes=6)
+            #col_one_hot = torch.nn.functional.one_hot(col_index, num_classes=12)
+
+            # Use matrix multiplication for soft indexing
+            #x = torch.matmul(row_one_hot.float(), torch.matmul(self.table_B, col_one_hot.float().T))
+
+
+            # Stack the scores into a single tensor
+            frame_scores = torch.stack([score_trunk, score_neck, score_legs])
+
+            # Append the tensor to simple_angel_score
+            simple_angel_score.append(frame_scores)
+
         simple_angel_score = torch.stack(simple_angel_score, dim=0)
         return simple_angel_score
 
@@ -283,4 +330,5 @@ class FAKE(nn.Module):
         angle = torch.acos(torch.clamp(cosine_angle, min=-1.0, max=1.0))
 
         return angle * (180.0 / torch.pi)
+
 
