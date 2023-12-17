@@ -73,9 +73,8 @@ class FAKE(nn.Module):
         score_for_less_20 = 4 - 4 * torch.sigmoid(steepness * (neck_angle - 20))
 
         # Combining the scores
-        scores = torch.max(torch.max(score_for_40, score_for_20), score_for_less_20)
-
-        return scores
+        score = score_for_40 + score_for_20 + score_for_less_20
+        return score
 
     def estimate_side_bending_scores(self, side_angle, steepness):
         """
@@ -87,13 +86,12 @@ class FAKE(nn.Module):
             side_angle = torch.tensor(side_angle, dtype=torch.float32, requires_grad=True)
 
         # Parameters for sigmoid function got from RULA sheet
-        lower_bound = 60
-        upper_bound = 120
+        bounds = torch.tensor([60, 120], dtype=torch.float32, requires_grad=True)
 
         # Apply sigmoid function to approximate the score
-        scores = 1 - torch.sigmoid(steepness * (side_angle - lower_bound)) * torch.sigmoid(steepness * (-side_angle + upper_bound))
+        score = 1 - torch.sigmoid(steepness * (side_angle - bounds[0])) * torch.sigmoid(steepness * (-side_angle + bounds[1]))
 
-        return scores
+        return score
 
     def estimate_trunk_scores(self, trunk_angle, steepness):
         """
@@ -113,9 +111,7 @@ class FAKE(nn.Module):
         score_below_3 = torch.sigmoid(steepness * (trunk_angle - thresholds[2]))
 
         # Combining the scores
-        combined_score = 1 + 1 * score_below_1 + 1 * score_below_2 + 1 * score_below_3
-
-
+        combined_score = 1 + score_below_1 + score_below_2 + score_below_3
 
         return combined_score
     def estimate_trunk_twist(self, trunk_angle, steepness):
@@ -142,14 +138,57 @@ class FAKE(nn.Module):
         threshold = torch.tensor(90, dtype=torch.float32, requires_grad=True)
 
         # Transition for the condition min_knee >= 90
-        score_for_90 = 2 * torch.sigmoid(steepness * (knee_angle - threshold))
+        score = 1 + torch.sigmoid(steepness * (knee_angle - threshold))
 
-        # Transition for the condition min_knee < 90
-        #score_for_less_90 = 1 + torch.sigmoid(-steepness * (knee_angle - threshold))
-        score_for_less_90 = 2 - torch.sigmoid(-steepness * (knee_angle - threshold))
+        return score
+
+    def estimate_upper_arms(self, max_shoulder, steepness):
+        """
+        Estimate RULA scores for upper arm score using a sigmoid function.
+        """
+        if not isinstance(max_shoulder, torch.Tensor):
+            max_shoulder = torch.tensor(max_shoulder, dtype=torch.float32, requires_grad=True)
+
+        thresholds = torch.tensor([20, 45, 90], dtype=torch.float32, requires_grad=True)
+        # Sigmoid functions for each condition
+        # TODO dafuck
+        score_below_1 = torch.sigmoid(steepness * (max_shoulder - thresholds[0]))
+        score_below_2 = torch.sigmoid(steepness * (max_shoulder - thresholds[1]))
+        score_below_3 = torch.sigmoid(steepness * (max_shoulder - thresholds[2]))
 
         # Combining the scores
-        score = torch.max(score_for_90, score_for_less_90)
+        combined_score = 1 + score_below_1 + score_below_2 + score_below_3
+
+        return combined_score
+
+
+    def estimate_abduction_arms(self, max_shoulder, steepness):
+        """
+        Estimate RULA scores for lower arm score using a sigmoid function.
+        """
+        if not isinstance(max_shoulder, torch.Tensor):
+            max_shoulder = torch.tensor(max_shoulder, dtype=torch.float32, requires_grad=True)
+
+        threshold = torch.tensor([150], dtype=torch.float32, requires_grad=True)    # TODO + others?
+
+        score = torch.sigmoid(steepness * max_shoulder - threshold[0])
+
+        return score
+    def estimate_lower_arms(self, max_elbow, steepness):
+        """
+        Estimate RULA scores for lower arm score using a sigmoid function.
+        """
+        if not isinstance(max_elbow, torch.Tensor):
+            max_elbow = torch.tensor(max_elbow, dtype=torch.float32, requires_grad=True)
+
+        threshold = torch.tensor([20, 100], dtype=torch.float32, requires_grad=True)
+
+        # Sigmoid functions for each condition
+        sigmoid_20 = torch.sigmoid(-steepness * max_elbow + threshold[0])
+        sigmoid_100 = torch.sigmoid(steepness * (max_elbow - threshold[1]))
+
+
+        score = 1 + sigmoid_20 + sigmoid_100
 
         return score
 
@@ -160,7 +199,6 @@ class FAKE(nn.Module):
         scores_neck = []
         scores_legs = []
 
-        score_upper_arm = torch.empty((0, 1), requires_grad=True, dtype=torch.float32, device=self.device)
 
         score_total = []
         simple_angel_score = []
@@ -168,24 +206,40 @@ class FAKE(nn.Module):
 
         steepness = torch.tensor(5.0, dtype=torch.float32, requires_grad=True, device=self.device)
         for i, f_angels in enumerate(frames_angles):
-            print('--------------Frame:', i)
-            # B sheet
-            # Neck
-            score_neck = self.estimate_neck_score(f_angels[11], steepness)
-            score_neck += self.estimate_side_bending_scores(f_angels[12], steepness)
-  
-            # Trunk
-            score_trunk = self.estimate_trunk_scores(f_angels[8], steepness)
-            score_trunk += self.estimate_side_bending_scores(f_angels[10], steepness)
-            score_trunk += self.estimate_trunk_twist(f_angels[9], steepness)
+            #print('--------------Frame:', i)
+            # A sheet
+            # A. Arms 1.upper arms
+            upper_arms_angels_tensor = torch.max(f_angels[0], f_angels[2])
+            max_shoulder = torch.max(torch.abs(upper_arms_angels_tensor))
+            score_arms = self.estimate_upper_arms(max_shoulder, steepness)
+            # A. Arms
+            arms_abduction_angels_tensor = torch.tensor([f_angels[1], f_angels[3]], dtype=torch.float32, requires_grad=True)
+            max_abduction = torch.max(torch.abs(arms_abduction_angels_tensor))
+            score_arms = score_arms + self.estimate_abduction_arms(max_abduction, steepness)
 
-            # Legs
+            # A. Arms 2. lower arms
+            lower_arms_angels_tensor = torch.tensor([f_angels[4], f_angels[5]], dtype=torch.float32, requires_grad=True)
+            max_elbow = torch.max(torch.abs(lower_arms_angels_tensor))
+            score_arms = score_arms + self.estimate_lower_arms(max_elbow, steepness)
+
+
+            # B sheet
+            # B.Neck
+            score_neck = self.estimate_neck_score(f_angels[11], steepness)
+            score_neck = score_neck + self.estimate_side_bending_scores(f_angels[12], steepness)
+  
+            # B.Trunk
+            score_trunk = self.estimate_trunk_scores(f_angels[8], steepness)
+            score_trunk = score_trunk + self.estimate_side_bending_scores(f_angels[10], steepness)
+            score_trunk = score_trunk + self.estimate_trunk_twist(f_angels[9], steepness)
+
+            # B.Legs
             min_knee = torch.min(f_angels[6], f_angels[7])
             score_legs = self.estimate_leg_scores(min_knee, steepness)
 
-            print('Score Neck:', score_trunk.item())
-            print('Score Trunk:', score_trunk.item())
-            print('Score Legs:', score_legs.item())
+            #print('Score Neck:', score_trunk.item())
+            #print('Score Trunk:', score_trunk.item())
+            #print('Score Legs:', score_legs.item())
             #row = score_neck - 1
             #col = (torch.round(scores_trunk[i]).long() - 1)*2 + (torch.round(scores_legs[i]).long() - 1)
             #print('row:', row, 'col:', col)
@@ -196,14 +250,14 @@ class FAKE(nn.Module):
             # Use matrix multiplication for soft indexing
             #x = torch.matmul(row_one_hot.float(), torch.matmul(self.table_B, col_one_hot.float().T))
 
-
             # Stack the scores into a single tensor
-            frame_scores = torch.stack([score_trunk, score_neck, score_legs])
+            frame_scores = torch.stack([score_arms, score_neck, score_trunk, score_legs])
 
             # Append the tensor to simple_angel_score
             simple_angel_score.append(frame_scores)
 
         simple_angel_score = torch.stack(simple_angel_score, dim=0)
+
         return simple_angel_score
 
     def accumulate_frames_angles(self, pose_3d):
@@ -330,5 +384,7 @@ class FAKE(nn.Module):
         angle = torch.acos(torch.clamp(cosine_angle, min=-1.0, max=1.0))
 
         return angle * (180.0 / torch.pi)
+
+
 
 
