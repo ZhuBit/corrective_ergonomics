@@ -4,7 +4,8 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import subprocess as sp
 from common.skeleton import Skeleton
-
+import matplotlib.animation as animation
+from datetime import datetime
 # from common.visualization import read_video, get_fps, get_resolution
 
 # def downsample_tensor(X, factor):
@@ -389,3 +390,56 @@ def render_animation_custom(keypoints, keypoints_metadata, poses, skeleton, fps,
         raise ValueError('Unsupported output format (only .mp4 and .gif are supported)')
     plt.close()
     print('Video saved')
+
+def visualize_poses_in_video(original_pose, optimized_pose, alpha, beta, gamma, optimizer_name, file_name):
+    # Number of frames
+    num_frames = original_pose.shape[0]
+
+    # Define pairs of keypoints to connect
+    pairs = [(0, 1), (0, 4), (0, 7), (7, 8), (8, 9), (9, 10), (4, 5), (1, 2), (5, 6), (2, 3),
+             (8, 11), (8, 14), (11, 12), (14, 15), (12, 13), (15, 16)]
+
+    # Initialize plot with two subplots
+    fig = plt.figure(figsize=(10, 5))
+    ax1 = fig.add_subplot(121, projection='3d')
+    ax2 = fig.add_subplot(122, projection='3d')
+
+    # Function to update each frame in the animation
+    def update_graph(num, original_pose, optimized_pose, pairs):
+        ax1.clear()
+        ax2.clear()
+
+        # Plot for original pose in red
+        x, y, z = original_pose[num, :, 0], original_pose[num, :, 2], -original_pose[num, :, 1]
+        ax1.scatter(x, y, z, color='red')
+        for pair in pairs:
+            ax1.plot([x[pair[0]], x[pair[1]]], [y[pair[0]], y[pair[1]]], [z[pair[0]], z[pair[1]]], color='red')
+        ax1.set_title('Original Pose')
+        ax1.set_xlabel('X')
+        ax1.set_ylabel('Y')
+        ax1.set_zlabel('Z')
+
+        # Plot for optimized pose in green
+        x, y, z = optimized_pose[num, :, 0], optimized_pose[num, :, 2], -optimized_pose[num, :, 1]
+        ax2.scatter(x, y, z, color='green')
+        for pair in pairs:
+            ax2.plot([x[pair[0]], x[pair[1]]], [y[pair[0]], y[pair[1]]], [z[pair[0]], z[pair[1]]], color='green')
+        ax2.set_title('Optimized Pose')
+        ax2.set_xlabel('X')
+        ax2.set_ylabel('Y')
+        ax2.set_zlabel('Z')
+
+        # Adding text information
+        text = f"\nAlpha: {alpha}\nBeta: {beta}\nGamma: {gamma}\nOptimizer: {optimizer_name}\nFile: {file_name}"
+        plt.figtext(0.1, 0.8, text, fontsize=10, ha='left')
+
+        return fig,
+
+    # Create animation
+    ani = animation.FuncAnimation(fig, update_graph, fargs=(original_pose, optimized_pose, pairs),
+                                  frames=num_frames, interval=100, blit=False)
+
+    # Save the animation as a video
+    timestamp = datetime.now().strftime("%d-%m_%H-%M-%S")
+    filename = f'/usr/src/app/data/video_analysis/{timestamp}_poses_comparison.mp4'
+    ani.save(filename, writer='ffmpeg', fps=10)

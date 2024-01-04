@@ -4,5 +4,6 @@ data/videos/*
 data/output_videos/*
 VideoPose3D
 venv
-config.json
 .idea
+junk
+models

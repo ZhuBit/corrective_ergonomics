@@ -1,0 +1,9 @@
+fvcore
+omegaconf
+fairscale
+tk
+opencv-python-headless
+cloudpickle
+pycocotools
+plotly
+torchvision
