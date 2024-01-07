@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class FAKE(nn.Module):
+class Ergonomics_Torch(nn.Module):
     def __init__(self, device):
-        super(FAKE, self).__init__()
+        super(Ergonomics_Torch, self).__init__()
         #self.target = target.detach()  # Detach the target as it's a fixed value
         self.device = device
         self.keypoints = {"Nose": 0, "LEye": 1, "REye": 2, "LEar": 3, "REar": 4,
@@ -42,17 +42,10 @@ class FAKE(nn.Module):
                            10: 'Trunk_sidebend', 11: 'Neck', 12: 'Neck_sidebend',
                            13: 'Neck_twist'}
 
-        self.score_total = torch.tensor([], requires_grad=True, dtype=torch.float32, device=self.device)
 
     def forward(self, pose_3d):
         # Compute RULA scores from pose_3d
-        #pose_3d = pose_3d.to(self.device)
         self.loss = self.compute_scores(pose_3d)
-
-        # Compute the loss as the mean squared error between
-        # the computed scores and the target scores
-        #loss = F.mse_loss(total_score, pose_3d, reduction='sum')
-
         return torch.sum(self.loss, dim=0) #loss
 
     def estimate_neck_score(self, neck_angle, steepness):
@@ -193,20 +186,11 @@ class FAKE(nn.Module):
         return score
 
     def compute_scores(self, pose_3d):
-
-        scores_lower_arm = []
-        scores_trunk = []
-        scores_neck = []
-        scores_legs = []
-
-
-        score_total = []
         simple_angel_score = []
         frames_angles = self.accumulate_frames_angles(pose_3d)
 
         steepness = torch.tensor(5.0, dtype=torch.float32, requires_grad=True, device=self.device)
         for i, f_angels in enumerate(frames_angles):
-            #print('--------------Frame:', i)
             # A sheet
             # A. Arms 1.upper arms
             upper_arms_angels_tensor = torch.max(f_angels[0], f_angels[2])
@@ -222,7 +206,6 @@ class FAKE(nn.Module):
             max_elbow = torch.max(torch.abs(lower_arms_angels_tensor))
             score_arms = score_arms + self.estimate_lower_arms(max_elbow, steepness)
 
-
             # B sheet
             # B.Neck
             score_neck = self.estimate_neck_score(f_angels[11], steepness)
@@ -237,21 +220,8 @@ class FAKE(nn.Module):
             min_knee = torch.min(f_angels[6], f_angels[7])
             score_legs = self.estimate_leg_scores(min_knee, steepness)
 
-            #print('Score Neck:', score_trunk.item())
-            #print('Score Trunk:', score_trunk.item())
-            #print('Score Legs:', score_legs.item())
-            #row = score_neck - 1
-            #col = (torch.round(scores_trunk[i]).long() - 1)*2 + (torch.round(scores_legs[i]).long() - 1)
-            #print('row:', row, 'col:', col)
-            # Convert indices to one-hot form
-            #row_one_hot = torch.nn.functional.one_hot(row_index, num_classes=6)
-            #col_one_hot = torch.nn.functional.one_hot(col_index, num_classes=12)
-
-            # Use matrix multiplication for soft indexing
-            #x = torch.matmul(row_one_hot.float(), torch.matmul(self.table_B, col_one_hot.float().T))
-
             # Stack the scores into a single tensor
-            frame_scores = torch.stack([score_arms, score_neck, score_trunk, score_legs])
+            frame_scores = score_arms + score_neck + score_trunk + score_legs
 
             # Append the tensor to simple_angel_score
             simple_angel_score.append(frame_scores)
@@ -329,13 +299,11 @@ class FAKE(nn.Module):
         new_pose = torch.transpose(pose, 0, 1)
 
         # Swap the second and third dimensions
-        #new_pose[1, :], new_pose[2, :] = new_pose[2, :].clone(), new_pose[1, :].clone()
         temp = new_pose[1, :].clone()
         new_pose[1, :] = new_pose[2, :].clone()
         new_pose[2, :] = temp
 
         # Flip the Z axis
-        #new_pose[2, :] = -new_pose[2, :]
         new_pose[2, :] = new_pose[2, :].neg()
 
         return new_pose
